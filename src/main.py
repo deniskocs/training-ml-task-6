@@ -2,11 +2,23 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 import numpy as np
 from tensorflow import keras
-
+import matplotlib
 import matplotlib.pyplot as plt
+
+from drawer import Drawer
+from train_callback import TrainCallback
+
+print(f"Tensor Flow Version: {tf.__version__}")
+print()
+gpu = len(tf.config.list_physical_devices('GPU')) > 0
+print("GPU is", "available" if gpu else "NOT AVAILABLE")
+
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
+    # matplotlib.use('module://backend_interagg')
+    print(matplotlib.get_backend())
+    matplotlib.use('MacOSX')
     dataset = tfds.load('celeb_a', split='train')
 
     # Encoder
@@ -40,10 +52,14 @@ if __name__ == '__main__':
         return image, image
 
 
-    new_dataset = dataset.map(preprocess)
-    new_dataset = new_dataset.batch(32)
+    new_dataset = dataset.take(100).map(preprocess)
+    new_dataset = new_dataset.batch(32, num_parallel_calls=tf.data.AUTOTUNE)
 
-    autoencoder.fit(new_dataset, epochs=32)
+    drawer = Drawer()
+
+    train_callback = TrainCallback(drawer=drawer)
+
+    autoencoder.fit(new_dataset, epochs=32, callbacks=train_callback)
 
     for example in dataset:
         print(list(example.keys()))
