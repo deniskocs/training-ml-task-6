@@ -1,11 +1,11 @@
 import tensorflow as tf
 import tensorflow_datasets as tfds
 import numpy as np
+from deniskocs_python_utils.drawer import Drawer
 from tensorflow import keras
 import matplotlib
 import matplotlib.pyplot as plt
 
-from drawer import Drawer
 from train_callback import TrainCallback
 
 print(f"Tensor Flow Version: {tf.__version__}")
