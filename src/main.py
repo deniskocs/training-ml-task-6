@@ -59,7 +59,9 @@ if __name__ == '__main__':
 
     train_callback = TrainCallback(drawer=drawer)
 
-    autoencoder.fit(new_dataset, epochs=32, callbacks=train_callback)
+    autoencoder.fit(new_dataset, epochs=2, callbacks=train_callback)
+
+    autoencoder.save_weights("/Users/denischilik/weights/test_weight.h5")
 
     for example in dataset:
         print(list(example.keys()))
