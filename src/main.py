@@ -5,6 +5,7 @@ from deniskocs_python_utils.drawer import Drawer
 from tensorflow import keras
 import matplotlib
 import matplotlib.pyplot as plt
+import os
 
 from train_callback import TrainCallback
 
@@ -52,16 +53,17 @@ if __name__ == '__main__':
         return image, image
 
 
-    new_dataset = dataset.take(100).map(preprocess)
-    new_dataset = new_dataset.batch(32, num_parallel_calls=tf.data.AUTOTUNE)
+    new_dataset = dataset.map(preprocess)
+    new_dataset = new_dataset.batch(128, num_parallel_calls=tf.data.AUTOTUNE)
 
     drawer = Drawer()
 
     train_callback = TrainCallback(drawer=drawer)
 
-    autoencoder.fit(new_dataset, epochs=2, callbacks=train_callback)
+    autoencoder.fit(new_dataset, epochs=32, callbacks=train_callback)
 
-    autoencoder.save_weights("/Users/denischilik/weights/test_weight.h5")
+    weights_folder = os.getenv('MY_DIRECTORY_PATH')
+    autoencoder.save_weights(weights_folder + "test_weight.h5")
 
     for example in dataset:
         print(list(example.keys()))
