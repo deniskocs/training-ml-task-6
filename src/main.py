@@ -6,6 +6,7 @@ from tensorflow import keras
 import matplotlib
 import matplotlib.pyplot as plt
 import os
+from PIL import Image
 
 from train_callback import TrainCallback
 
@@ -22,22 +23,42 @@ if __name__ == '__main__':
     matplotlib.use('MacOSX')
     dataset = tfds.load('celeb_a', split='train')
 
+    # dataset = dataset.take(12800)
+
+    # Load the image using PIL
+    margo_image = Image.open('../res/margarita.jpg')
+
+    # Convert the image to a NumPy array
+    image_array = np.array(margo_image)
+    image_array = np.expand_dims(image_array, axis=0)
+    image_array = tf.cast(image_array, tf.float32) / 255.0  # Normalize pixel values
+    # plt.imshow(margo_image)
+    # plt.show()
+
+    hidden_vector_size = 512
+
     # Encoder
     encoder_input = keras.layers.Input(shape=(218, 178, 3))
-    conv1 = keras.layers.Conv2D(filters=32, kernel_size=(3, 3), strides=(2, 2), padding="same",
-                                activation=keras.activations.relu)(encoder_input)  # (None, 108, 88, 32)
-    encoder_output = conv1
-    print(conv1.shape)
+    x = keras.layers.Conv2D(32, (3, 3), strides=(2, 2), activation='relu', padding='same')(encoder_input)
+    x = keras.layers.MaxPooling2D((2, 2), padding='same')(x)
+    x = keras.layers.Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+    x = keras.layers.MaxPooling2D((2, 2), padding='same')(x)
+    x = keras.layers.Flatten()(x)
+    encoder_output = keras.layers.Dense(hidden_vector_size)(x)
     encoder = keras.Model(encoder_input, encoder_output)
 
     # Decoder
-    decoder_input = keras.layers.Input(shape=(109, 89, 32))
-    upscale1 = keras.layers.UpSampling2D()(decoder_input)
-    print(upscale1.shape)
-    conv1 = keras.layers.Convolution2D(filters=3, kernel_size=(3, 3), padding="same",
-                                       activation=keras.activations.sigmoid)(upscale1)
-    print(conv1.shape)
-    decoder_output = conv1
+    decoder_input = keras.layers.Input(shape=(hidden_vector_size))
+    x = keras.layers.Dense(28*23*32)(decoder_input)
+    x = keras.layers.Reshape((28, 23, 32))(x)
+    x = keras.layers.UpSampling2D()(x)
+    x = keras.layers.Conv2D(32, (5, 5), activation='relu', padding='same')(x)
+    x = keras.layers.UpSampling2D((2, 2))(x)
+    x = keras.layers.Conv2D(16, (5, 5), activation='relu', padding='same')(x)
+    x = keras.layers.UpSampling2D((2, 2))(x)
+    x = keras.layers.Conv2D(3, (5, 5), activation='relu', padding='same')(x)
+    x = keras.layers.Cropping2D(cropping=((3, 3), (3, 3)))(x)
+    decoder_output = x
     decoder = keras.Model(decoder_input, decoder_output)
 
     # Autoencoder
@@ -60,14 +81,19 @@ if __name__ == '__main__':
 
     train_callback = TrainCallback(drawer=drawer)
 
-    autoencoder.fit(new_dataset, epochs=32, callbacks=train_callback)
+    autoencoder.fit(new_dataset, epochs=20) #, callbacks=train_callback)
 
-    weights_folder = os.getenv('MY_DIRECTORY_PATH')
-    autoencoder.save_weights(weights_folder + "test_weight.h5")
+    # weights_folder = os.getenv('MY_DIRECTORY_PATH')
+    # autoencoder.save_weights(weights_folder + "test_weight.h5")
 
-    for example in dataset:
-        print(list(example.keys()))
-        image = np.array(example["image"])
-        print(image.shape)
-        plt.imshow(image)
-        plt.show()
+    result = autoencoder.predict(image_array)
+    plt.imshow(result[0])
+    plt.show()
+
+    # for example in dataset:
+    #     print(list(example.keys()))
+    #     image = np.array(example["image"])
+    #     print(image.shape)
+    #     plt.imshow(image)
+    #     plt.show()
+
