@@ -1,6 +1,7 @@
 import tensorflow as tf
 from deniskocs_python_utils.drawer import Drawer
 
+
 class TrainCallback(tf.keras.callbacks.Callback):
 
     def __init__(self, drawer: Drawer):

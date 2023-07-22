@@ -5,7 +5,6 @@ from deniskocs_python_utils.drawer import Drawer
 from tensorflow import keras
 import matplotlib
 import matplotlib.pyplot as plt
-import os
 from PIL import Image
 
 from train_callback import TrainCallback
@@ -22,6 +21,7 @@ if __name__ == '__main__':
     print(matplotlib.get_backend())
     matplotlib.use('MacOSX')
     dataset = tfds.load('celeb_a', split='train')
+    validation = tfds.load('celeb_a', split='validation')
 
     # dataset = dataset.take(12800)
 
@@ -35,60 +35,72 @@ if __name__ == '__main__':
     # plt.imshow(margo_image)
     # plt.show()
 
-    hidden_vector_size = 512
+    hidden_vector_size = 4096
+    number_of_samples = 20000
 
-    # Encoder
-    encoder_input = keras.layers.Input(shape=(218, 178, 3))
-    x = keras.layers.Conv2D(32, (3, 3), strides=(2, 2), activation='relu', padding='same')(encoder_input)
-    x = keras.layers.MaxPooling2D((2, 2), padding='same')(x)
-    x = keras.layers.Conv2D(64, (3, 3), activation='relu', padding='same')(x)
-    x = keras.layers.MaxPooling2D((2, 2), padding='same')(x)
-    x = keras.layers.Flatten()(x)
-    encoder_output = keras.layers.Dense(hidden_vector_size)(x)
-    encoder = keras.Model(encoder_input, encoder_output)
+    def make_start_block(hidden_state):
+        x = keras.layers.Dense(54 * 44 * 8, activation=tf.keras.activations.relu)(hidden_state)
+        x = keras.layers.BatchNormalization()(x)
+        x = keras.layers.Reshape((54, 44, 8))(x)
+        x = keras.layers.Conv2DTranspose(32, kernel_size=(3, 3), strides=(2, 2), padding="same", activation=tf.keras.activations.relu)(x)
+        x = keras.layers.Conv2DTranspose(32, kernel_size=(3, 3), strides=(2, 2), padding="same", activation=tf.keras.activations.relu)(x)
+        return keras.layers.Conv2D(3, kernel_size=(3, 3), strides=(1, 1), padding="same", activation=tf.keras.activations.sigmoid)(x)
 
-    # Decoder
-    decoder_input = keras.layers.Input(shape=(hidden_vector_size))
-    x = keras.layers.Dense(28*23*32)(decoder_input)
-    x = keras.layers.Reshape((28, 23, 32))(x)
-    x = keras.layers.UpSampling2D()(x)
-    x = keras.layers.Conv2D(32, (5, 5), activation='relu', padding='same')(x)
-    x = keras.layers.UpSampling2D((2, 2))(x)
-    x = keras.layers.Conv2D(16, (5, 5), activation='relu', padding='same')(x)
-    x = keras.layers.UpSampling2D((2, 2))(x)
-    x = keras.layers.Conv2D(3, (5, 5), activation='relu', padding='same')(x)
-    x = keras.layers.Cropping2D(cropping=((3, 3), (3, 3)))(x)
-    decoder_output = x
+    def make_block(hidden_state, image):
+        x = keras.layers.Dense(54 * 44 * 8, activation=tf.keras.activations.relu)(hidden_state)
+        x = keras.layers.BatchNormalization()(x)
+        x = keras.layers.Reshape((54, 44, 8))(x)
+        i1 = keras.layers.MaxPool2D(pool_size=4, strides=4)(image)
+        x = keras.layers.Concatenate()([i1, x])
+        x = keras.layers.Conv2DTranspose(32, kernel_size=(3, 3), strides=(2, 2), padding="same", activation=tf.keras.activations.relu)(x)
+        i2 = keras.layers.MaxPool2D(pool_size=2, strides=2)(image)
+        x = keras.layers.Concatenate()([i2, x])
+        x = keras.layers.Conv2DTranspose(32, kernel_size=(3, 3), strides=(2, 2), padding="same", activation=tf.keras.activations.relu)(x)
+        x = keras.layers.Concatenate()([image, x])
+        return keras.layers.Conv2D(3, kernel_size=(3, 3), strides=(1, 1), padding="same", activation=tf.keras.activations.sigmoid)(x)
+
+    # 178x218x3
+    # 89x109
+    decoder_input = keras.layers.Input(shape=(1))
+    hidden_state = keras.layers.Embedding(number_of_samples, hidden_vector_size)(decoder_input)
+    x = make_start_block(hidden_state)
+    x = make_block(hidden_state, x)
+    decoder_output = make_block(hidden_state, x)
     decoder = keras.Model(decoder_input, decoder_output)
 
-    # Autoencoder
-    autoencoder_output = decoder(encoder_output)
-    autoencoder = keras.Model(encoder_input, autoencoder_output)
+    print(decoder.summary())
 
-    autoencoder.compile(optimizer="Adam", loss="mse")
+    def ssim_loss(y_true, y_pred):
+        return 1.0 - tf.reduce_mean(tf.image.ssim(y_true, y_pred, 2.0))
 
+    decoder.compile(optimizer=tf.keras.optimizers.legacy.Adam(learning_rate=0.01), loss=tf.keras.losses.mse)
 
-    def preprocess(example):
+    def preprocess(index, example):
         image = example['image']
+        image = tf.image.resize(image, [216, 176])
+
         image = tf.cast(image, tf.float32) / 255.0  # Normalize pixel values
-        return image, image
+        return tf.cast(index, tf.float32), image
 
+    indexed_dataset = dataset.take(number_of_samples).enumerate()
+    new_dataset = indexed_dataset.map(preprocess)
+    new_dataset = new_dataset.shuffle(buffer_size=1024).batch(128, num_parallel_calls=tf.data.AUTOTUNE)
 
-    new_dataset = dataset.map(preprocess)
-    new_dataset = new_dataset.batch(128, num_parallel_calls=tf.data.AUTOTUNE)
+  #  new_validation = validation.map(preprocess).batch(128, num_parallel_calls=tf.data.AUTOTUNE)
 
     drawer = Drawer()
 
     train_callback = TrainCallback(drawer=drawer)
 
-    autoencoder.fit(new_dataset, epochs=20) #, callbacks=train_callback)
-
+    decoder.fit(new_dataset, epochs=1000, callbacks=train_callback)
+    # autoencoder.fit(new_dataset, validation_data=new_validation, epochs=20)  # , callbacks=train_callback)
     # weights_folder = os.getenv('MY_DIRECTORY_PATH')
     # autoencoder.save_weights(weights_folder + "test_weight.h5")
 
-    result = autoencoder.predict(image_array)
-    plt.imshow(result[0])
-    plt.show()
+    for i in range(100):
+        result = decoder.predict([i])
+        plt.imshow(result[0])
+        plt.show()
 
     # for example in dataset:
     #     print(list(example.keys()))
